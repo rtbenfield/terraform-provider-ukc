@@ -38,3 +38,10 @@ var netwIfaceModelType = types.ObjectType{
 		"mac":        types.StringType,
 	},
 }
+
+// ukcRefModel describes the data model for a generic resource reference.
+// This is used when a relationship returns a UUID and Name only.
+type ukcRefModel struct {
+	UUID types.String `tfsdk:"uuid"`
+	Name types.String `tfsdk:"name"`
+}

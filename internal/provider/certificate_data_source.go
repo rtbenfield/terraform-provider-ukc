@@ -1,0 +1,211 @@
+// Copyright (c) Unikraft GmbH
+// SPDX-License-Identifier: MPL-2.0
+
+package provider
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"sdk.kraft.cloud/certificates"
+)
+
+func NewCertificateDataSource() datasource.DataSource {
+	return &CertificateDataSource{}
+}
+
+// CertificateDataSource defines the data source implementation.
+type CertificateDataSource struct {
+	client certificates.CertificatesService
+}
+
+// Ensure CertificateDataSource satisfies various datasource interfaces.
+var _ datasource.DataSource = &CertificateDataSource{}
+
+// CertificateDataSourceModel describes the data source data model.
+type CertificateDataSourceModel struct {
+	Name types.String `tfsdk:"name"`
+	UUID types.String `tfsdk:"uuid"`
+
+	CN            types.String        `tfsdk:"cn"`
+	CreatedAt     types.String        `tfsdk:"created_at"`
+	Issuer        types.String        `tfsdk:"issuer"`
+	NotAfter      types.String        `tfsdk:"not_after"`
+	NotBefore     types.String        `tfsdk:"not_before"`
+	SerialNumber  types.String        `tfsdk:"serial_number"`
+	ServiceGroups []ukcRefModel       `tfsdk:"service_groups"`
+	Status        types.String        `tfsdk:"status"`
+	Subject       types.String        `tfsdk:"subject"`
+	Validation    certValidationModel `tfsdk:"validation"`
+}
+
+// Metadata implements datasource.DataSource.
+func (d *CertificateDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_certificate"
+}
+
+// Schema implements datasource.DataSource.
+func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		// This description is used by the documentation generator and the language server.
+		MarkdownDescription: "Retrieve information about a Unikraft Cloud certificate.",
+
+		Attributes: map[string]schema.Attribute{
+			"name": schema.StringAttribute{
+				Computed:            true,
+				Optional:            true,
+				MarkdownDescription: "Name of the certificate to retrieve",
+			},
+			"uuid": schema.StringAttribute{
+				Computed:            true,
+				Optional:            true,
+				MarkdownDescription: "UUID of the certificate to retrieve",
+			},
+
+			"cn": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Common Name of the certificate",
+			},
+			"created_at": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Date and time of creation in ISO8601",
+			},
+			"issuer": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Certificate issuer (usually Let's Encrypt)",
+			},
+			"not_before": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Date and time of beginning of validity in ISO8601",
+			},
+			"not_after": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Expiration date and time in ISO8601",
+			},
+			"serial_number": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Certificate serial number",
+			},
+			"service_groups": schema.ListNestedAttribute{
+				Computed:            true,
+				MarkdownDescription: "Services using this certificate",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"uuid": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "UUID of the service",
+						},
+						"name": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "Name of the service",
+						},
+					},
+				},
+			},
+			"status": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "`success` on success, or `error` if the request failed",
+			},
+			"subject": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Certificate subject",
+			},
+			"validation": schema.SingleNestedAttribute{
+				Computed:            true,
+				MarkdownDescription: "Validation status (only while `pending`)",
+				Attributes: map[string]schema.Attribute{
+					"attempt": schema.Int32Attribute{
+						Computed:            true,
+						MarkdownDescription: "Number of validation attempts made",
+					},
+					"next": schema.StringAttribute{
+						Computed:            true,
+						MarkdownDescription: "Date and time of next validation attempt in ISO8601",
+					},
+				},
+			},
+		},
+	}
+}
+
+// Configure implements datasource.DataSource.
+func (d *CertificateDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	// Prevent panic if the provider has not been configured.
+	if req.ProviderData == nil {
+		return
+	}
+
+	client, ok := req.ProviderData.(certificates.CertificatesService)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Data Source Configure Type",
+			fmt.Sprintf("Expected certificates.CertificatesService, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+		return
+	}
+
+	d.client = client
+}
+
+// Read implements datasource.DataSource.
+func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data CertificateDataSourceModel
+
+	// Read Terraform configuration data into the model
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Get certificate by UUID
+	uuid := data.UUID.ValueString()
+	certRaw, err := d.client.Get(ctx, uuid)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Client Error",
+			fmt.Sprintf("Unable to read certificate with UUID %s, got error: %v", uuid, err),
+		)
+		return
+	}
+
+	// Check if certificate was found
+	if len(certRaw.Data.Entries) == 0 {
+		resp.Diagnostics.AddError(
+			"Certificate Not Found",
+			fmt.Sprintf("No certificate found with UUID: %s", uuid),
+		)
+		return
+	}
+
+	// Map response body to model
+	cert := certRaw.Data.Entries[0]
+
+	data.CN = types.StringValue(cert.CommonName)
+	data.CreatedAt = types.StringValue(cert.CreatedAt)
+	data.Issuer = types.StringValue(cert.Issuer)
+	data.Name = types.StringValue(cert.Name)
+	data.NotAfter = types.StringValue(cert.NotAfter)
+	data.NotBefore = types.StringValue(cert.NotBefore)
+	data.SerialNumber = types.StringValue(cert.SerialNumber)
+	data.Status = types.StringValue(cert.Status)
+	data.Subject = types.StringValue(cert.Subject)
+	data.Validation = certValidationModel{
+		Attempt: types.Int32Value(int32(cert.Validation.Attempt)),
+		Next:    types.StringValue(cert.Validation.Next),
+	}
+
+	data.ServiceGroups = make([]ukcRefModel, len(cert.ServiceGroups))
+	for i, svcGrp := range cert.ServiceGroups {
+		data.ServiceGroups[i] = ukcRefModel{
+			UUID: types.StringValue(svcGrp.UUID),
+			Name: types.StringValue(svcGrp.Name),
+		}
+	}
+
+	// Save data into Terraform state
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
