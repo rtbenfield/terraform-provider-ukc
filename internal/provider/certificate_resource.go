@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
+	ukc "sdk.kraft.cloud"
 	"sdk.kraft.cloud/certificates"
 )
 
@@ -77,7 +78,6 @@ func (r *CertificateResource) Schema(ctx context.Context, req resource.SchemaReq
 			},
 			"chain": schema.StringAttribute{
 				Required:            true,
-				WriteOnly:           true,
 				MarkdownDescription: "Chain of the certificate in PEM format",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -94,7 +94,6 @@ func (r *CertificateResource) Schema(ctx context.Context, req resource.SchemaReq
 			"pkey": schema.StringAttribute{
 				Required:            true,
 				Sensitive:           true,
-				WriteOnly:           true,
 				MarkdownDescription: "Private key of the certificate in PEM format",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -179,16 +178,16 @@ func (r *CertificateResource) Configure(ctx context.Context, req resource.Config
 		return
 	}
 
-	client, ok := req.ProviderData.(certificates.CertificatesService)
+	client, ok := req.ProviderData.(ukc.KraftCloud)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected certificates.CertificatesService, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected KraftCloud, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
 
-	r.client = client
+	r.client = client.Certificates()
 }
 
 // Create implements resource.Resource.
