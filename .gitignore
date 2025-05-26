@@ -1,3 +1,7 @@
 # Go workspace
 go.work
 go.work.sum
+
+# Terraform provider
+terraform-provider-ukc_v*
+

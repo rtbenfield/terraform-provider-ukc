@@ -21,3 +21,7 @@ help: ## Show this help menu and exit
 	/^##@/ { \
 		printf "\n\033[1m%s\033[0m\n", substr($$0, 5) \
 	} ' $(MAKEFILE_LIST)
+
+.PHONY: build
+build: ## Build the provider
+	go build -o terraform-provider-ukc_v0.1.0 .
