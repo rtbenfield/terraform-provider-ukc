@@ -28,14 +28,15 @@ Terraform usually installs providers by downloading them from a registry. Howeve
 development build][tffw-local] of the provider, which allows skipping the version and checksum checks typically
 performed against release builds.
 
-To achieve this, add a `dev_overrides` entry to your `~/.terraformrc` configuration file:
+To achieve this, add a `dev_overrides` entry to your `~/.terraformrc` or `~/.tofurc` configuration file:
 
 ```hcl
+# ~/.terraformrc
 provider_installation {
 
   dev_overrides {
-      # The value is the path of $GOBIN (or $GOPATH/bin)
-      "unikraft.cloud/dev/unikraft-cloud" = "/home/myuser/go/bin"
+      # The value is the path of $GOBIN, $GOPATH/bin, or the directory containing the provider binary
+      "unikraft.cloud/dev/unikraft-cloud" = "~/go/bin"
   }
 
   # For all other providers, install them directly from their origin provider
@@ -43,6 +44,23 @@ provider_installation {
   # the dev_overrides block, and so no other providers will be available.
   direct {}
 }
+```
+
+```hcl
+# ~/.tofurc
+provider_installation {
+
+  dev_overrides {
+      # The value is the path of $GOBIN, $GOPATH/bin, or the directory containing the provider binary
+      "unikraft.cloud/dev/unikraft-cloud" = "~/go/bin"
+  }
+
+  # For all other providers, install them directly from their origin provider
+  # registries as normal. If you omit this, Terraform will _only_ use
+  # the dev_overrides block, and so no other providers will be available.
+  direct {}
+}
+
 ```
 
 > [!NOTE]
@@ -56,8 +74,8 @@ the remote provider from the Terraform Registry, such as in the example below:
 ```hcl
 terraform {
   required_providers {
-    unikraft-cloud = {
-      source = "kraft.cloud/dev/unikraft-cloud"
+    ukc = {
+      source = "unikraft.cloud/dev/unikraft-cloud"
     }
   }
 }
@@ -96,17 +114,12 @@ documentation pages:
 - Examples inside the `examples/` directory
 - Schema information from the provider, resources, and data sources
 
-
 [tfreg-docs]: https://registry.terraform.io/providers/unikraft-cloud/unikraft-cloud/latest/docs
-
 [tffw-home]: https://developer.hashicorp.com/terraform/plugin/framework
 [tffw-tuto]: https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework
 [tffw-local]: https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework/providers-plugin-framework-provider#prepare-terraform-for-local-provider-install
 [tffw-acc]: https://developer.hashicorp.com/terraform/plugin/framework/acctests
-
 [tfplugindocs]: https://github.com/hashicorp/terraform-plugin-docs
-
 [tf-dl]: https://developer.hashicorp.com/terraform/downloads
 [go-dl]: https://go.dev/doc/install
-
 [gotest-flags]: https://pkg.go.dev/cmd/go#hdr-Testing_flags

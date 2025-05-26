@@ -1,3 +1,3 @@
-data "unikraft-cloud_instances" "example" {
+data "ukc_instances" "example" {
   state = ["running", "starting"]
 }
