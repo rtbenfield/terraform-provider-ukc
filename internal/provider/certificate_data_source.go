@@ -140,6 +140,7 @@ func (d *CertificateDataSource) Configure(ctx context.Context, req datasource.Co
 // Read implements datasource.DataSource.
 func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data CertificateDataSourceModel
+	var diag diag.Diagnostics
 
 	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
@@ -190,11 +191,11 @@ func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	serviceGroups := make([]attr.Value, len(cert.ServiceGroups))
 	for i, svcGrp := range cert.ServiceGroups {
-		var diag diag.Diagnostics
 		serviceGroups[i], diag = ukcRefModel(svcGrp.UUID, svcGrp.Name)
 		resp.Diagnostics.Append(diag...)
 	}
-	data.ServiceGroups, _ = types.ListValue(ukcRefModelType, serviceGroups)
+	data.ServiceGroups, diag = types.ListValue(ukcRefModelType, serviceGroups)
+	resp.Diagnostics.Append(diag...)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
