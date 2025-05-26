@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	patchedclient "github.com/unikraft-cloud/terraform-provider-unikraft-cloud/internal/patched_client"
 
 	ukc "sdk.kraft.cloud"
 	"sdk.kraft.cloud/client"
@@ -146,10 +147,10 @@ func (p *UnikraftCloudProvider) Configure(ctx context.Context, req provider.Conf
 	}
 
 	// Client configuration for data sources and resources
-	client := ukc.NewClient(
+	client := patchedclient.NewPatchedClientWithMetro(ukc.NewClient(
 		ukc.WithDefaultMetro(metro),
 		ukc.WithToken(token),
-	)
+	), metro)
 
 	resp.DataSourceData = client
 	resp.ResourceData = client
