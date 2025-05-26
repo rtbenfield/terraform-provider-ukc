@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -39,16 +40,16 @@ type CertificateResourceModel struct {
 	Name  types.String `tfsdk:"name"`
 	PKey  types.String `tfsdk:"pkey"`
 
-	CreatedAt     types.String         `tfsdk:"created_at"`
-	Issuer        types.String         `tfsdk:"issuer"`
-	NotAfter      types.String         `tfsdk:"not_after"`
-	NotBefore     types.String         `tfsdk:"not_before"`
-	SerialNumber  types.String         `tfsdk:"serial_number"`
-	ServiceGroups []ukcRefModel        `tfsdk:"service_groups"`
-	Status        types.String         `tfsdk:"status"`
-	Subject       types.String         `tfsdk:"subject"`
-	UUID          types.String         `tfsdk:"uuid"`
-	Validation    *certValidationModel `tfsdk:"validation"`
+	CreatedAt    types.String `tfsdk:"created_at"`
+	Issuer       types.String `tfsdk:"issuer"`
+	NotAfter     types.String `tfsdk:"not_after"`
+	NotBefore    types.String `tfsdk:"not_before"`
+	SerialNumber types.String `tfsdk:"serial_number"`
+	// ServiceGroups types.List           `tfsdk:"service_groups"`
+	Status  types.String `tfsdk:"status"`
+	Subject types.String `tfsdk:"subject"`
+	UUID    types.String `tfsdk:"uuid"`
+	// Validation *certValidationModel `tfsdk:"validation"`
 }
 
 type certValidationModel struct {
@@ -121,22 +122,22 @@ func (r *CertificateResource) Schema(ctx context.Context, req resource.SchemaReq
 				Computed:            true,
 				MarkdownDescription: "Certificate serial number",
 			},
-			"service_groups": schema.ListNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Services using this certificate",
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"uuid": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "UUID of the service",
-						},
-						"name": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "Name of the service",
-						},
-					},
-				},
-			},
+			// "service_groups": schema.ListNestedAttribute{
+			// 	Computed:            true,
+			// 	MarkdownDescription: "Services using this certificate",
+			// 	NestedObject: schema.NestedAttributeObject{
+			// 		Attributes: map[string]schema.Attribute{
+			// 			"uuid": schema.StringAttribute{
+			// 				Computed:            true,
+			// 				MarkdownDescription: "UUID of the service",
+			// 			},
+			// 			"name": schema.StringAttribute{
+			// 				Computed:            true,
+			// 				MarkdownDescription: "Name of the service",
+			// 			},
+			// 		},
+			// 	},
+			// },
 			"subject": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Certificate subject",
@@ -152,21 +153,21 @@ func (r *CertificateResource) Schema(ctx context.Context, req resource.SchemaReq
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"validation": schema.SingleNestedAttribute{
-				Computed:            true,
-				Optional:            true,
-				MarkdownDescription: "Validation status (only while `pending`)",
-				Attributes: map[string]schema.Attribute{
-					"attempt": schema.Int32Attribute{
-						Computed:            true,
-						MarkdownDescription: "Number of validation attempts made",
-					},
-					"next": schema.StringAttribute{
-						Computed:            true,
-						MarkdownDescription: "Date and time of next validation attempt in ISO8601",
-					},
-				},
-			},
+			// "validation": schema.SingleNestedAttribute{
+			// 	Computed:            true,
+			// 	Optional:            true,
+			// 	MarkdownDescription: "Validation status (only while `pending`)",
+			// 	Attributes: map[string]schema.Attribute{
+			// 		"attempt": schema.Int32Attribute{
+			// 			Computed:            true,
+			// 			MarkdownDescription: "Number of validation attempts made",
+			// 		},
+			// 		"next": schema.StringAttribute{
+			// 			Computed:            true,
+			// 			MarkdownDescription: "Date and time of next validation attempt in ISO8601",
+			// 		},
+			// 	},
+			// },
 		},
 	}
 }
@@ -228,7 +229,7 @@ func (r *CertificateResource) Create(ctx context.Context, req resource.CreateReq
 	}
 	certFull := certRawFull.Data.Entries[0]
 
-	r.inflate(&data, &certFull)
+	r.inflate(ctx, &data, &certFull)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -256,7 +257,7 @@ func (r *CertificateResource) Read(ctx context.Context, req resource.ReadRequest
 	}
 	cert := certRaw.Data.Entries[0]
 
-	r.inflate(&data, &cert)
+	r.inflate(ctx, &data, &cert)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -298,7 +299,7 @@ func (r *CertificateResource) ImportState(ctx context.Context, req resource.Impo
 	resource.ImportStatePassthroughID(ctx, path.Root("uuid"), req, resp)
 }
 
-func (r *CertificateResource) inflate(model *CertificateResourceModel, cert *certificates.GetResponseItem) {
+func (r *CertificateResource) inflate(ctx context.Context, model *CertificateResourceModel, cert *certificates.GetResponseItem) diag.Diagnostics {
 	model.CN = types.StringValue(cert.CommonName)
 	model.CreatedAt = types.StringValue(cert.CreatedAt)
 	model.Issuer = types.StringValue(cert.Issuer)
@@ -310,18 +311,33 @@ func (r *CertificateResource) inflate(model *CertificateResourceModel, cert *cer
 	model.Subject = types.StringValue(cert.Subject)
 	model.UUID = types.StringValue(cert.UUID)
 
-	model.ServiceGroups = make([]ukcRefModel, len(cert.ServiceGroups))
-	for i, svcGrp := range cert.ServiceGroups {
-		model.ServiceGroups[i] = ukcRefModel{
-			UUID: types.StringValue(svcGrp.UUID),
-			Name: types.StringValue(svcGrp.Name),
-		}
-	}
+	// // Convert service groups to a list of objects
+	// serviceGroups := []map[string]attr.Value{}
+	// for _, svcGrp := range cert.ServiceGroups {
+	// 	serviceGroups = append(serviceGroups, map[string]attr.Value{
+	// 		"uuid": types.StringValue(svcGrp.UUID),
+	// 		"name": types.StringValue(svcGrp.Name),
+	// 	})
+	// }
 
-	if cert.Validation != nil {
-		model.Validation = &certValidationModel{
-			Attempt: types.Int32Value(int32(cert.Validation.Attempt)),
-			Next:    types.StringValue(cert.Validation.Next),
-		}
-	}
+	// // Create the list of service groups
+	// serviceGroupsList, diags := types.ListValueFrom(ctx, types.ObjectType{
+	// 	AttrTypes: map[string]attr.Type{
+	// 		"uuid": types.StringType,
+	// 		"name": types.StringType,
+	// 	},
+	// }, serviceGroups)
+	// if diags.HasError() {
+	// 	return diags
+	// }
+	// model.ServiceGroups = serviceGroupsList
+
+	// if cert.Validation != nil {
+	// 	model.Validation = &certValidationModel{
+	// 		Attempt: types.Int32Value(int32(cert.Validation.Attempt)),
+	// 		Next:    types.StringValue(cert.Validation.Next),
+	// 	}
+	// }
+
+	return make(diag.Diagnostics, 0)
 }

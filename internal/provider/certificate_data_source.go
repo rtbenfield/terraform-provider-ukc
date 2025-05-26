@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
+	ukc "sdk.kraft.cloud"
 	"sdk.kraft.cloud/certificates"
 )
 
@@ -28,19 +29,19 @@ var _ datasource.DataSource = &CertificateDataSource{}
 
 // CertificateDataSourceModel describes the data source data model.
 type CertificateDataSourceModel struct {
-	Name types.String `tfsdk:"name"`
 	UUID types.String `tfsdk:"uuid"`
 
-	CN            types.String        `tfsdk:"cn"`
-	CreatedAt     types.String        `tfsdk:"created_at"`
-	Issuer        types.String        `tfsdk:"issuer"`
-	NotAfter      types.String        `tfsdk:"not_after"`
-	NotBefore     types.String        `tfsdk:"not_before"`
-	SerialNumber  types.String        `tfsdk:"serial_number"`
-	ServiceGroups []ukcRefModel       `tfsdk:"service_groups"`
-	Status        types.String        `tfsdk:"status"`
-	Subject       types.String        `tfsdk:"subject"`
-	Validation    certValidationModel `tfsdk:"validation"`
+	CN           types.String `tfsdk:"cn"`
+	CreatedAt    types.String `tfsdk:"created_at"`
+	Issuer       types.String `tfsdk:"issuer"`
+	Name         types.String `tfsdk:"name"`
+	NotAfter     types.String `tfsdk:"not_after"`
+	NotBefore    types.String `tfsdk:"not_before"`
+	SerialNumber types.String `tfsdk:"serial_number"`
+	// ServiceGroups []ukcRefModel       `tfsdk:"service_groups"`
+	Status  types.String `tfsdk:"status"`
+	Subject types.String `tfsdk:"subject"`
+	// Validation    certValidationModel `tfsdk:"validation"`
 }
 
 // Metadata implements datasource.DataSource.
@@ -55,14 +56,8 @@ func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.Schem
 		MarkdownDescription: "Retrieve information about a Unikraft Cloud certificate.",
 
 		Attributes: map[string]schema.Attribute{
-			"name": schema.StringAttribute{
-				Computed:            true,
-				Optional:            true,
-				MarkdownDescription: "Name of the certificate to retrieve",
-			},
 			"uuid": schema.StringAttribute{
-				Computed:            true,
-				Optional:            true,
+				Required:            true,
 				MarkdownDescription: "UUID of the certificate to retrieve",
 			},
 
@@ -78,6 +73,10 @@ func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.Schem
 				Computed:            true,
 				MarkdownDescription: "Certificate issuer (usually Let's Encrypt)",
 			},
+			"name": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Name of the certificate to retrieve",
+			},
 			"not_before": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Date and time of beginning of validity in ISO8601",
@@ -90,22 +89,22 @@ func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.Schem
 				Computed:            true,
 				MarkdownDescription: "Certificate serial number",
 			},
-			"service_groups": schema.ListNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Services using this certificate",
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"uuid": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "UUID of the service",
-						},
-						"name": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "Name of the service",
-						},
-					},
-				},
-			},
+			// "service_groups": schema.ListNestedAttribute{
+			// 	Computed:            true,
+			// 	MarkdownDescription: "Services using this certificate",
+			// 	NestedObject: schema.NestedAttributeObject{
+			// 		Attributes: map[string]schema.Attribute{
+			// 			"uuid": schema.StringAttribute{
+			// 				Computed:            true,
+			// 				MarkdownDescription: "UUID of the service",
+			// 			},
+			// 			"name": schema.StringAttribute{
+			// 				Computed:            true,
+			// 				MarkdownDescription: "Name of the service",
+			// 			},
+			// 		},
+			// 	},
+			// },
 			"status": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "`success` on success, or `error` if the request failed",
@@ -114,20 +113,20 @@ func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.Schem
 				Computed:            true,
 				MarkdownDescription: "Certificate subject",
 			},
-			"validation": schema.SingleNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Validation status (only while `pending`)",
-				Attributes: map[string]schema.Attribute{
-					"attempt": schema.Int32Attribute{
-						Computed:            true,
-						MarkdownDescription: "Number of validation attempts made",
-					},
-					"next": schema.StringAttribute{
-						Computed:            true,
-						MarkdownDescription: "Date and time of next validation attempt in ISO8601",
-					},
-				},
-			},
+			// "validation": schema.SingleNestedAttribute{
+			// 	Computed:            true,
+			// 	MarkdownDescription: "Validation status (only while `pending`)",
+			// 	Attributes: map[string]schema.Attribute{
+			// 		"attempt": schema.Int32Attribute{
+			// 			Computed:            true,
+			// 			MarkdownDescription: "Number of validation attempts made",
+			// 		},
+			// 		"next": schema.StringAttribute{
+			// 			Computed:            true,
+			// 			MarkdownDescription: "Date and time of next validation attempt in ISO8601",
+			// 		},
+			// 	},
+			// },
 		},
 	}
 }
@@ -139,16 +138,16 @@ func (d *CertificateDataSource) Configure(ctx context.Context, req datasource.Co
 		return
 	}
 
-	client, ok := req.ProviderData.(certificates.CertificatesService)
+	client, ok := req.ProviderData.(ukc.KraftCloud)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected certificates.CertificatesService, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected KraftCloud, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
 
-	d.client = client
+	d.client = client.Certificates()
 }
 
 // Read implements datasource.DataSource.
@@ -158,6 +157,14 @@ func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.UUID.IsNull() {
+		resp.Diagnostics.AddError(
+			"Missing UUID",
+			"UUID is required to read a certificate.",
+		)
 		return
 	}
 
@@ -193,18 +200,18 @@ func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	data.SerialNumber = types.StringValue(cert.SerialNumber)
 	data.Status = types.StringValue(cert.Status)
 	data.Subject = types.StringValue(cert.Subject)
-	data.Validation = certValidationModel{
-		Attempt: types.Int32Value(int32(cert.Validation.Attempt)),
-		Next:    types.StringValue(cert.Validation.Next),
-	}
+	// data.Validation = certValidationModel{
+	// 	Attempt: types.Int32Value(int32(cert.Validation.Attempt)),
+	// 	Next:    types.StringValue(cert.Validation.Next),
+	// }
 
-	data.ServiceGroups = make([]ukcRefModel, len(cert.ServiceGroups))
-	for i, svcGrp := range cert.ServiceGroups {
-		data.ServiceGroups[i] = ukcRefModel{
-			UUID: types.StringValue(svcGrp.UUID),
-			Name: types.StringValue(svcGrp.Name),
-		}
-	}
+	// data.ServiceGroups = make([]ukcRefModel, len(cert.ServiceGroups))
+	// for i, svcGrp := range cert.ServiceGroups {
+	// 	data.ServiceGroups[i] = ukcRefModel{
+	// 		UUID: types.StringValue(svcGrp.UUID),
+	// 		Name: types.StringValue(svcGrp.Name),
+	// 	}
+	// }
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
