@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	ukc "sdk.kraft.cloud"
@@ -31,17 +33,16 @@ var _ datasource.DataSource = &CertificateDataSource{}
 type CertificateDataSourceModel struct {
 	UUID types.String `tfsdk:"uuid"`
 
-	CN           types.String `tfsdk:"cn"`
-	CreatedAt    types.String `tfsdk:"created_at"`
-	Issuer       types.String `tfsdk:"issuer"`
-	Name         types.String `tfsdk:"name"`
-	NotAfter     types.String `tfsdk:"not_after"`
-	NotBefore    types.String `tfsdk:"not_before"`
-	SerialNumber types.String `tfsdk:"serial_number"`
-	// ServiceGroups []ukcRefModel       `tfsdk:"service_groups"`
-	Status  types.String `tfsdk:"status"`
-	Subject types.String `tfsdk:"subject"`
-	// Validation    certValidationModel `tfsdk:"validation"`
+	CN            types.String `tfsdk:"cn"`
+	CreatedAt     types.String `tfsdk:"created_at"`
+	Issuer        types.String `tfsdk:"issuer"`
+	Name          types.String `tfsdk:"name"`
+	NotAfter      types.String `tfsdk:"not_after"`
+	NotBefore     types.String `tfsdk:"not_before"`
+	SerialNumber  types.String `tfsdk:"serial_number"`
+	ServiceGroups types.List   `tfsdk:"service_groups"`
+	Status        types.String `tfsdk:"status"`
+	Subject       types.String `tfsdk:"subject"`
 }
 
 // Metadata implements datasource.DataSource.
@@ -89,22 +90,22 @@ func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.Schem
 				Computed:            true,
 				MarkdownDescription: "Certificate serial number",
 			},
-			// "service_groups": schema.ListNestedAttribute{
-			// 	Computed:            true,
-			// 	MarkdownDescription: "Services using this certificate",
-			// 	NestedObject: schema.NestedAttributeObject{
-			// 		Attributes: map[string]schema.Attribute{
-			// 			"uuid": schema.StringAttribute{
-			// 				Computed:            true,
-			// 				MarkdownDescription: "UUID of the service",
-			// 			},
-			// 			"name": schema.StringAttribute{
-			// 				Computed:            true,
-			// 				MarkdownDescription: "Name of the service",
-			// 			},
-			// 		},
-			// 	},
-			// },
+			"service_groups": schema.ListNestedAttribute{
+				Computed:            true,
+				MarkdownDescription: "Services using this certificate",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"uuid": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "UUID of the service",
+						},
+						"name": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "Name of the service",
+						},
+					},
+				},
+			},
 			"status": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "`success` on success, or `error` if the request failed",
@@ -113,20 +114,6 @@ func (d *CertificateDataSource) Schema(ctx context.Context, req datasource.Schem
 				Computed:            true,
 				MarkdownDescription: "Certificate subject",
 			},
-			// "validation": schema.SingleNestedAttribute{
-			// 	Computed:            true,
-			// 	MarkdownDescription: "Validation status (only while `pending`)",
-			// 	Attributes: map[string]schema.Attribute{
-			// 		"attempt": schema.Int32Attribute{
-			// 			Computed:            true,
-			// 			MarkdownDescription: "Number of validation attempts made",
-			// 		},
-			// 		"next": schema.StringAttribute{
-			// 			Computed:            true,
-			// 			MarkdownDescription: "Date and time of next validation attempt in ISO8601",
-			// 		},
-			// 	},
-			// },
 		},
 	}
 }
@@ -200,18 +187,14 @@ func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	data.SerialNumber = types.StringValue(cert.SerialNumber)
 	data.Status = types.StringValue(cert.Status)
 	data.Subject = types.StringValue(cert.Subject)
-	// data.Validation = certValidationModel{
-	// 	Attempt: types.Int32Value(int32(cert.Validation.Attempt)),
-	// 	Next:    types.StringValue(cert.Validation.Next),
-	// }
 
-	// data.ServiceGroups = make([]ukcRefModel, len(cert.ServiceGroups))
-	// for i, svcGrp := range cert.ServiceGroups {
-	// 	data.ServiceGroups[i] = ukcRefModel{
-	// 		UUID: types.StringValue(svcGrp.UUID),
-	// 		Name: types.StringValue(svcGrp.Name),
-	// 	}
-	// }
+	serviceGroups := make([]attr.Value, len(cert.ServiceGroups))
+	for i, svcGrp := range cert.ServiceGroups {
+		var diag diag.Diagnostics
+		serviceGroups[i], diag = ukcRefModel(svcGrp.UUID, svcGrp.Name)
+		resp.Diagnostics.Append(diag...)
+	}
+	data.ServiceGroups, _ = types.ListValue(ukcRefModelType, serviceGroups)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
