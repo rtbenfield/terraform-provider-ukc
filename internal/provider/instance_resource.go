@@ -388,7 +388,20 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	data.Args, diags = types.ListValueFrom(ctx, types.StringType, insFull.Args)
 	resp.Diagnostics.Append(diags...)
 
-	data.Env, diags = types.MapValueFrom(ctx, types.StringType, insFull.Env)
+	// Env needs to handle that some keys are treated as secret and replaced with *
+	// This causes a plan diff that Terraform is unhappy with, so we preserve original values.
+	//! This fails to detect plan drift to secrest. A hash value return would be preferable.
+	var envState map[string]string
+	resp.Diagnostics.Append(data.Env.ElementsAs(ctx, &envState, false)...)
+	envFinal := make(map[string]string)
+	for k, v := range insFull.Env {
+		if v == "*" && envState[k] != "" {
+			envFinal[k] = envState[k]
+		} else {
+			envFinal[k] = v
+		}
+	}
+	data.Env, diags = types.MapValueFrom(ctx, types.StringType, envFinal)
 	resp.Diagnostics.Append(diags...)
 
 	if data.ServiceGroup == nil {
@@ -461,7 +474,20 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	data.Args, diags = types.ListValueFrom(ctx, types.StringType, ins.Args)
 	resp.Diagnostics.Append(diags...)
 
-	data.Env, diags = types.MapValueFrom(ctx, types.StringType, ins.Env)
+	// Env needs to handle that some keys are treated as secret and replaced with *
+	// This causes a plan diff that Terraform is unhappy with, so we preserve original values.
+	//! This fails to detect plan drift to secrest. A hash value return would be preferable.
+	var envState map[string]string
+	resp.Diagnostics.Append(data.Env.ElementsAs(ctx, &envState, false)...)
+	envFinal := make(map[string]string)
+	for k, v := range ins.Env {
+		if v == "*" && envState[k] != "" {
+			envFinal[k] = envState[k]
+		} else {
+			envFinal[k] = v
+		}
+	}
+	data.Env, diags = types.MapValueFrom(ctx, types.StringType, envFinal)
 	resp.Diagnostics.Append(diags...)
 
 	if data.ServiceGroup == nil {
