@@ -160,12 +160,14 @@ func (p *UnikraftCloudProvider) Configure(ctx context.Context, req provider.Conf
 func (p *UnikraftCloudProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewInstanceResource,
+		NewCertificateResource,
 	}
 }
 
 // DataSources describes the provider data model.
 func (p *UnikraftCloudProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewCertificateDataSource,
 		NewInstanceDataSource,
 		NewInstancesDataSource,
 	}
