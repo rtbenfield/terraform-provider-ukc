@@ -13,8 +13,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	patchedclient "github.com/unikraft-cloud/terraform-provider-unikraft-cloud/internal/patched_client"
 
-	unikraftcloud "sdk.kraft.cloud"
+	ukc "sdk.kraft.cloud"
 	"sdk.kraft.cloud/client"
 )
 
@@ -45,7 +46,7 @@ type UnikraftCloudModel struct {
 
 // Metadata implements provider.Provider.
 func (p *UnikraftCloudProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "unikraft-cloud"
+	resp.TypeName = "ukc"
 	resp.Version = p.version
 }
 
@@ -146,25 +147,27 @@ func (p *UnikraftCloudProvider) Configure(ctx context.Context, req provider.Conf
 	}
 
 	// Client configuration for data sources and resources
-	client := unikraftcloud.NewClient(
-		unikraftcloud.WithDefaultMetro(metro),
-		unikraftcloud.WithToken(token),
-	)
+	client := patchedclient.NewPatchedClientWithMetro(ukc.NewClient(
+		ukc.WithDefaultMetro(metro),
+		ukc.WithToken(token),
+	), metro)
 
-	resp.DataSourceData = client.Instances()
-	resp.ResourceData = client.Instances()
+	resp.DataSourceData = client
+	resp.ResourceData = client
 }
 
 // Resources describes the provider data model.
 func (p *UnikraftCloudProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewInstanceResource,
+		NewCertificateResource,
 	}
 }
 
 // DataSources describes the provider data model.
 func (p *UnikraftCloudProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewCertificateDataSource,
 		NewInstanceDataSource,
 		NewInstancesDataSource,
 	}

@@ -5,6 +5,7 @@ package provider
 
 import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -37,4 +38,20 @@ var netwIfaceModelType = types.ObjectType{
 		"private_ip": types.StringType,
 		"mac":        types.StringType,
 	},
+}
+
+var ukcRefModelType = types.ObjectType{
+	AttrTypes: map[string]attr.Type{
+		"uuid": types.StringType,
+		"name": types.StringType,
+	},
+}
+
+// ukcRefModel describes the data model for a generic resource reference.
+// This is used when a relationship returns a UUID and Name only.
+func ukcRefModel(uuid, name string) (attr.Value, diag.Diagnostics) {
+	return types.ObjectValue(ukcRefModelType.AttrTypes, map[string]attr.Value{
+		"uuid": types.StringValue(uuid),
+		"name": types.StringValue(name),
+	})
 }
