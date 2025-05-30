@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -17,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
+	ukc "sdk.kraft.cloud"
 	"sdk.kraft.cloud/services"
 )
 
@@ -37,18 +40,19 @@ var (
 
 // ServiceResourceModel describes the resource data model.
 type ServiceResourceModel struct {
-	Domains   []ServiceDomainModel  `tfsdk:"domains"`
-	HardLimit types.Int32           `tfsdk:"hard_limit"`
-	Name      types.String          `tfsdk:"name"`
-	Services  []ServiceServiceModel `tfsdk:"services"`
-	SoftLimit types.Int32           `tfsdk:"soft_limit"`
-	UUID      types.String          `tfsdk:"uuid"`
+	Domains   types.List   `tfsdk:"domains"`
+	HardLimit types.Int32  `tfsdk:"hard_limit"`
+	Name      types.String `tfsdk:"name"`
+	Services  types.List   `tfsdk:"services"`
+	SoftLimit types.Int32  `tfsdk:"soft_limit"`
+
+	UUID types.String `tfsdk:"uuid"`
 }
 
 type ServiceDomainModel struct {
-	Certificate types.Map    `tfsdk:"certificate"`
-	FQDN        types.String `tfsdk:"fqdn"`
-	Name        types.String `tfsdk:"name"`
+	FQDN types.String `tfsdk:"fqdn"`
+	// Certificate types.Map    `tfsdk:"certificate"`
+	Name types.String `tfsdk:"name"`
 }
 
 type ServiceServiceModel struct {
@@ -71,6 +75,7 @@ func (r *ServiceResource) Schema(ctx context.Context, req resource.SchemaRequest
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
 				Computed: true,
+				Optional: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplaceIfConfigured(),
 				},
@@ -81,33 +86,35 @@ func (r *ServiceResource) Schema(ctx context.Context, req resource.SchemaRequest
 					Attributes: map[string]schema.Attribute{
 						"name": schema.StringAttribute{
 							Required:            true,
-							WriteOnly:           true,
 							MarkdownDescription: "Publicly accessible domain name",
-						},
-						"certificate": schema.MapNestedAttribute{
-							Optional:            true,
-							MarkdownDescription: "TLS certificate to use for the domain",
-							NestedObject: schema.NestedAttributeObject{
-								Attributes: map[string]schema.Attribute{
-									"uuid": schema.StringAttribute{
-										Computed:            true,
-										Optional:            true,
-										MarkdownDescription: "UUID of the certificate",
-									},
-									"name": schema.StringAttribute{
-										Computed:            true,
-										Optional:            true,
-										MarkdownDescription: "Name of the certificate",
-									},
-
-									// Return-only attributes
-									"state": schema.StringAttribute{
-										Computed:            true,
-										MarkdownDescription: "State of the certificate",
-									},
-								},
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.UseStateForUnknown(),
+								stringplanmodifier.RequiresReplaceIfConfigured(),
 							},
 						},
+						// "certificate": schema.MapNestedAttribute{
+						// 	NestedObject: schema.NestedAttributeObject{
+						// 	MarkdownDescription: "TLS certificate to use for the domain",
+						// 		Attributes: map[string]schema.Attribute{
+						// 			"uuid": schema.StringAttribute{
+						// 				Computed:            true,
+						// 				Optional:            true,
+						// 			},
+						// 				MarkdownDescription: "UUID of the certificate",
+						// 			"name": schema.StringAttribute{
+						// 				Computed:            true,
+						// 				Optional:            true,
+						// 			},
+						// 				MarkdownDescription: "Name of the certificate",
+
+						// 			// Return-only attributes
+						// 			"state": schema.StringAttribute{
+						// 				Computed:            true,
+						// 			},
+						// 				MarkdownDescription: "State of the certificate",
+						// 		},
+						// 	},
+						// },
 
 						// Return-only attributes
 						"fqdn": schema.StringAttribute{
@@ -119,8 +126,8 @@ func (r *ServiceResource) Schema(ctx context.Context, req resource.SchemaRequest
 				},
 			},
 			"hard_limit": schema.Int32Attribute{
+				Computed:            true,
 				Optional:            true,
-				WriteOnly:           true,
 				MarkdownDescription: "Per-instance connection [hard limit](https://unikraft.cloud/docs/api/v1/services/#limits). Defaults to 65535",
 				PlanModifiers: []planmodifier.Int32{
 					int32planmodifier.RequiresReplaceIfConfigured(),
@@ -166,11 +173,19 @@ func (r *ServiceResource) Schema(ctx context.Context, req resource.SchemaRequest
 				},
 			},
 			"soft_limit": schema.Int32Attribute{
+				Computed:            true,
 				Optional:            true,
-				WriteOnly:           true,
 				MarkdownDescription: "Per-instance connection [soft limit](https://unikraft.cloud/docs/api/v1/services/#limits). Defaults to 1",
 				PlanModifiers: []planmodifier.Int32{
 					int32planmodifier.RequiresReplaceIfConfigured(),
+				},
+			},
+
+			"uuid": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "UUID of the service",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 		},
@@ -184,16 +199,16 @@ func (r *ServiceResource) Configure(ctx context.Context, req resource.ConfigureR
 		return
 	}
 
-	client, ok := req.ProviderData.(services.ServicesService)
+	client, ok := req.ProviderData.(ukc.KraftCloud)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected services.ServicesService, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected ukc.KraftCloud, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
 
-	r.client = client
+	r.client = client.Services()
 }
 
 // Create implements resource.Resource.
@@ -206,37 +221,39 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	in := services.CreateRequest{
-		Domains:   make([]services.CreateRequestDomain, len(data.Domains)),
-		HardLimit: ptr(int(data.HardLimit.ValueInt32())),
-		Name:      data.Name.ValueStringPointer(),
-		Services:  make([]services.CreateRequestService, len(data.Services)),
-		SoftLimit: ptr(int(data.SoftLimit.ValueInt32())),
+	var domains []ServiceDomainModel
+	resp.Diagnostics.Append(data.Domains.ElementsAs(ctx, &domains, false)...)
+	var svcs []ServiceServiceModel
+	resp.Diagnostics.Append(data.Services.ElementsAs(ctx, &svcs, false)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	for i, domain := range data.Domains {
+	in := services.CreateRequest{
+		Domains: make([]services.CreateRequestDomain, len(domains)),
+		// HardLimit: int32ToInt(data.HardLimit.ValueInt32Pointer()),
+		Name:     data.Name.ValueStringPointer(),
+		Services: make([]services.CreateRequestService, len(svcs)),
+		// SoftLimit: int32ToInt(data.SoftLimit.ValueInt32Pointer()),
+	}
+
+	for i, domain := range domains {
 		in.Domains[i] = services.CreateRequestDomain{
 			Name: domain.Name.ValueString(),
 		}
-		// TODO: implement certificate
-		// if domain.Certificate != nil {
-		// 	in.Domains[i].Certificate = domain.Certificate
-		// }
 	}
 
-	for i, service := range data.Services {
-		in.Services[i].Port = int(service.Port.ValueInt32())
-		in.Services[i].DestinationPort = ptr(int(service.DestinationPort.ValueInt32()))
-		in.Services[i].Handlers = make([]services.Handler, 0, len(service.Handlers.Elements()))
-
-		handlers := make([]types.String, 0, len(service.Handlers.Elements()))
+	for i, service := range svcs {
+		var handlers []services.Handler
 		resp.Diagnostics.Append(service.Handlers.ElementsAs(ctx, &handlers, false)...)
-		if resp.Diagnostics.HasError() {
-			return
+		in.Services[i] = services.CreateRequestService{
+			Port:            int(service.Port.ValueInt32()),
+			DestinationPort: ptr(int(service.DestinationPort.ValueInt32())),
+			Handlers:        handlers,
 		}
-		for j, handler := range handlers {
-			in.Services[i].Handlers[j] = services.Handler(handler.ValueString())
-		}
+	}
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	response, err := r.client.Create(ctx, in)
@@ -291,7 +308,7 @@ func (r *ServiceResource) Update(ctx context.Context, req resource.UpdateRequest
 
 // Delete implements resource.Resource.
 func (r *ServiceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data InstanceResourceModel
+	var data ServiceResourceModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -333,6 +350,104 @@ func (r *ServiceResource) read(ctx context.Context, uuid string, data *ServiceRe
 	data.HardLimit = types.Int32Value(int32(service.HardLimit))
 	data.SoftLimit = types.Int32Value(int32(service.SoftLimit))
 	data.UUID = types.StringValue(uuid)
+
+	// Map domains
+	// We need to handle the special case where 'name' is required for input but not returned in the response
+	// Instead, we get 'fqdn' in the response
+	// First, get the existing domains from state to preserve the 'name' values
+	var domainsFromState []ServiceDomainModel
+	diag.Append(data.Domains.ElementsAs(ctx, &domainsFromState, false)...)
+
+	// Create domain objects for the response
+	domains := make([]attr.Value, len(service.Domains))
+	for i, domain := range service.Domains {
+		// Find if we have a matching domain in the state
+		var nameValue attr.Value
+		for _, stateDomain := range domainsFromState {
+			// Try to match based on FQDN if it exists in state
+			if !stateDomain.FQDN.IsNull() && stateDomain.FQDN.ValueString() == domain.FQDN {
+				// FQDN == FQDN
+				nameValue = types.StringValue(stateDomain.Name.ValueString())
+				break
+			} else if !stateDomain.Name.IsNull() && strings.HasSuffix(stateDomain.Name.ValueString(), ".") && strings.TrimRight(stateDomain.Name.ValueString(), ".") == domain.FQDN {
+				// Name is an FQDN with a trailing `.` and should be an exact match
+				nameValue = types.StringValue(stateDomain.Name.ValueString())
+				break
+			} else if !stateDomain.Name.IsNull() && strings.HasPrefix(domain.FQDN, stateDomain.Name.ValueString()) {
+				// Name is a prefix of the FQDN
+				nameValue = types.StringValue(stateDomain.Name.ValueString())
+				break
+			} else {
+				// Must be a new domain that is not in the state
+				nameValue = types.StringNull()
+			}
+		}
+
+		// Create the domain object
+		domainObj, diags := types.ObjectValue(
+			map[string]attr.Type{
+				"fqdn": types.StringType,
+				"name": types.StringType,
+			},
+			map[string]attr.Value{
+				"fqdn": types.StringValue(domain.FQDN),
+				"name": nameValue,
+			},
+		)
+		diag.Append(diags...)
+		domains[i] = domainObj
+	}
+
+	// Set the domains list
+	domainsList, diags := types.ListValue(
+		types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"fqdn": types.StringType,
+				"name": types.StringType,
+			},
+		},
+		domains,
+	)
+	diag.Append(diags...)
+	data.Domains = domainsList
+
+	// Map services
+	services := make([]attr.Value, len(service.Services))
+	for i, svc := range service.Services {
+		// Convert handlers to a Set
+		handlers, diags := types.SetValueFrom(ctx, types.StringType, svc.Handlers)
+		diag.Append(diags...)
+
+		// Create the service object
+		serviceObj, diags := types.ObjectValue(
+			map[string]attr.Type{
+				"port":             types.Int32Type,
+				"destination_port": types.Int32Type,
+				"handlers":         types.SetType{ElemType: types.StringType},
+			},
+			map[string]attr.Value{
+				"port":             types.Int32Value(int32(svc.Port)),
+				"destination_port": types.Int32Value(int32(svc.DestinationPort)),
+				"handlers":         handlers,
+			},
+		)
+		diag.Append(diags...)
+		services[i] = serviceObj
+	}
+
+	// Set the services list
+	servicesList, diags := types.ListValue(
+		types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"port":             types.Int32Type,
+				"destination_port": types.Int32Type,
+				"handlers":         types.SetType{ElemType: types.StringType},
+			},
+		},
+		services,
+	)
+	diag.Append(diags...)
+	data.Services = servicesList
 
 	return diag
 }

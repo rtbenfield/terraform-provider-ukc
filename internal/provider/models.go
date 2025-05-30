@@ -55,3 +55,12 @@ func ukcRefModel(uuid, name string) (attr.Value, diag.Diagnostics) {
 		"name": types.StringValue(name),
 	})
 }
+
+// int32ToInt converts an *int32 to an *int while preserving nil values.
+func int32ToInt(i *int32) *int {
+	if i == nil {
+		return nil
+	}
+	v := int(*i)
+	return &v
+}
