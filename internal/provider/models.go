@@ -11,9 +11,10 @@ import (
 
 // svcGrpModel describes the data model for an instance's service group.
 type svcGrpModel struct {
-	UUID     types.String `tfsdk:"uuid"`
-	Name     types.String `tfsdk:"name"`
-	Services []svcModel   `tfsdk:"services"`
+	UUID     types.String  `tfsdk:"uuid"`
+	Name     types.String  `tfsdk:"name"`
+	Services []svcModel    `tfsdk:"services"`
+	Domains  []domainModel `tfsdk:"domains"`
 }
 
 // svcModel describes the data model for a service group's service.
@@ -21,6 +22,11 @@ type svcModel struct {
 	Port            types.Int64 `tfsdk:"port"`
 	DestinationPort types.Int64 `tfsdk:"destination_port"`
 	Handlers        types.Set   `tfsdk:"handlers"`
+}
+
+type domainModel struct {
+	// Name types.String `tfsdk:"name"`
+	FQDN types.String `tfsdk:"fqdn"`
 }
 
 // netwIfaceModel describes the data model for an instance's network interface.

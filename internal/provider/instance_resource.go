@@ -44,22 +44,22 @@ var (
 
 // InstanceResourceModel describes the resource data model.
 type InstanceResourceModel struct {
-	Image     types.String `tfsdk:"image"`
-	Args      types.List   `tfsdk:"args"`
-	MemoryMB  types.Int64  `tfsdk:"memory_mb"`
-	Autostart types.Bool   `tfsdk:"autostart"`
+	Args          types.List   `tfsdk:"args"`
+	Autostart     types.Bool   `tfsdk:"autostart"`
+	Env           types.Map    `tfsdk:"env"`
+	Image         types.String `tfsdk:"image"`
+	MemoryMB      types.Int64  `tfsdk:"memory_mb"`
+	Name          types.String `tfsdk:"name"`
+	RestartPolicy types.String `tfsdk:"restart_policy"`
 
-	UUID              types.String `tfsdk:"uuid"`
-	Name              types.String `tfsdk:"name"`
-	FQDN              types.String `tfsdk:"fqdn"`
-	PrivateIP         types.String `tfsdk:"private_ip"`
-	PrivateFQDN       types.String `tfsdk:"private_fqdn"`
-	State             types.String `tfsdk:"state"`
-	CreatedAt         types.String `tfsdk:"created_at"`
-	Env               types.Map    `tfsdk:"env"`
-	ServiceGroup      *svcGrpModel `tfsdk:"service_group"`
-	NetworkInterfaces types.List   `tfsdk:"network_interfaces"`
 	BootTimeUS        types.Int64  `tfsdk:"boot_time_us"`
+	CreatedAt         types.String `tfsdk:"created_at"`
+	NetworkInterfaces types.List   `tfsdk:"network_interfaces"`
+	PrivateFQDN       types.String `tfsdk:"private_fqdn"`
+	PrivateIP         types.String `tfsdk:"private_ip"`
+	ServiceGroup      *svcGrpModel `tfsdk:"service_group"`
+	State             types.String `tfsdk:"state"`
+	UUID              types.String `tfsdk:"uuid"`
 }
 
 // Metadata implements resource.Resource.
@@ -83,6 +83,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			"args": schema.ListAttribute{
 				ElementType: types.StringType,
 				Optional:    true,
+				Computed:    true,
 				PlanModifiers: []planmodifier.List{
 					listplanmodifier.RequiresReplaceIfConfigured(),
 					listplanmodifier.UseStateForUnknown(),
@@ -92,7 +93,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional: true,
 				Computed: true,
 				Validators: []validator.Int64{
-					int64validator.Between(16, 256),
+					int64validator.AtLeast(16),
 				},
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplaceIfConfigured(),
@@ -106,6 +107,13 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"restart_policy": schema.StringAttribute{
+				Optional: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplaceIfConfigured(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"uuid": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Unique identifier of the instance",
@@ -115,6 +123,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			},
 			"name": schema.StringAttribute{
 				Computed: true,
+				Optional: true,
 			},
 			"private_ip": schema.StringAttribute{
 				Computed: true,
@@ -131,18 +140,21 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			"env": schema.MapAttribute{
 				ElementType: types.StringType,
 				Computed:    true,
+				Optional:    true,
 			},
 			"service_group": schema.SingleNestedAttribute{
-				Required: true,
+				Optional: true,
 				Attributes: map[string]schema.Attribute{
 					"uuid": schema.StringAttribute{
+						Optional: true,
 						Computed: true,
 					},
 					"name": schema.StringAttribute{
+						Optional: true,
 						Computed: true,
 					},
 					"services": schema.ListNestedAttribute{
-						Required: true,
+						Optional: true,
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"port": schema.Int64Attribute{
@@ -271,6 +283,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	in := instances.CreateRequest{
+		Name:     data.Name.ValueStringPointer(),
 		Image:    data.Image.ValueString(),
 		MemoryMB: ptr(int(data.MemoryMB.ValueInt64())),
 		ServiceGroup: &instances.CreateRequestServiceGroup{
@@ -279,12 +292,32 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		Autostart: ptr(data.Autostart.ValueBool()),
 	}
 
-	argVals := make([]types.String, 0, len(data.Args.Elements()))
-	resp.Diagnostics.Append(data.Args.ElementsAs(ctx, &argVals, false)...)
-	for _, v := range argVals {
-		in.Args = append(in.Args, v.ValueString())
+	// Handle restart policy if it's set
+	if !data.RestartPolicy.IsNull() && !data.RestartPolicy.IsUnknown() {
+		policy := instances.RestartPolicy(data.RestartPolicy.ValueString())
+		in.RestartPolicy = &policy
 	}
 
+	if !data.Args.IsUnknown() && !data.Args.IsNull() {
+		argVals := make([]types.String, 0, len(data.Args.Elements()))
+		resp.Diagnostics.Append(data.Args.ElementsAs(ctx, &argVals, false)...)
+		for _, v := range argVals {
+			in.Args = append(in.Args, v.ValueString())
+		}
+	}
+
+	// Map env vars
+	if !data.Env.IsUnknown() && !data.Env.IsNull() {
+		resp.Diagnostics.Append(data.Env.ElementsAs(ctx, &in.Env, false)...)
+	}
+
+	// Map service group
+	if !data.ServiceGroup.UUID.IsUnknown() && !data.ServiceGroup.UUID.IsNull() {
+		in.ServiceGroup.UUID = data.ServiceGroup.UUID.ValueStringPointer()
+	}
+	if !data.ServiceGroup.Name.IsUnknown() && !data.ServiceGroup.Name.IsNull() {
+		in.ServiceGroup.Name = data.ServiceGroup.Name.ValueStringPointer()
+	}
 	for i, svc := range data.ServiceGroup.Services {
 		in.ServiceGroup.Services[i].Port = int(svc.Port.ValueInt64())
 
@@ -322,9 +355,6 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 
 	data.UUID = types.StringValue(ins.UUID)
 	data.Name = types.StringValue(ins.Name)
-	if ins.ServiceGroup != nil && len(ins.ServiceGroup.Domains) > 0 {
-		data.FQDN = types.StringValue(ins.ServiceGroup.Domains[0].FQDN)
-	}
 	data.PrivateIP = types.StringValue(ins.PrivateIP)
 	data.PrivateFQDN = types.StringValue(ins.PrivateFQDN)
 
@@ -421,9 +451,6 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 		data.Image = types.StringValue(ins.Image)
 	}
 	data.Name = types.StringValue(ins.Name)
-	if ins.ServiceGroup != nil && len(ins.ServiceGroup.Domains) > 0 {
-		data.FQDN = types.StringValue(ins.ServiceGroup.Domains[0].FQDN)
-	}
 	data.PrivateIP = types.StringValue(ins.PrivateIP)
 	data.PrivateFQDN = types.StringValue(ins.PrivateFQDN)
 	data.State = types.StringValue(string(ins.State))
