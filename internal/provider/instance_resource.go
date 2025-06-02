@@ -49,6 +49,7 @@ type InstanceResourceModel struct {
 	Env           types.Map    `tfsdk:"env"`
 	Image         types.String `tfsdk:"image"`
 	MemoryMB      types.Int64  `tfsdk:"memory_mb"`
+	Metro         types.String `tfsdk:"metro"`
 	Name          types.String `tfsdk:"name"`
 	RestartPolicy types.String `tfsdk:"restart_policy"`
 
@@ -242,6 +243,12 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			"boot_time_us": schema.Int64Attribute{
 				Computed: true,
 			},
+
+			"metro": schema.StringAttribute{
+				Computed:            true,
+				Optional:            true,
+				MarkdownDescription: "Overrides the metro defined in the ukc provider.",
+			},
 		},
 	}
 }
@@ -273,6 +280,11 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
 	}
 
 	// TODO(antoineco): the SDK should be sending a null when this is unset,
@@ -343,7 +355,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	insRaw, err := r.client.Create(ctx, in)
+	insRaw, err := client.Create(ctx, in)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -359,7 +371,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	data.PrivateFQDN = types.StringValue(ins.PrivateFQDN)
 
 	// Not all attributes are returned by CreateInstance
-	insRawFull, err := r.client.Get(ctx, data.UUID.ValueString())
+	insRawFull, err := client.Get(ctx, data.UUID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -437,7 +449,12 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	insRaw, err := r.client.Get(ctx, data.UUID.ValueString())
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
+	insRaw, err := client.Get(ctx, data.UUID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -532,7 +549,12 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	_, err := r.client.Delete(ctx, data.UUID.ValueString())
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
+	_, err := client.Delete(ctx, data.UUID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",

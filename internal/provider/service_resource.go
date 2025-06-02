@@ -42,6 +42,7 @@ var (
 type ServiceResourceModel struct {
 	Domains   types.List   `tfsdk:"domains"`
 	HardLimit types.Int32  `tfsdk:"hard_limit"`
+	Metro     types.String `tfsdk:"metro"`
 	Name      types.String `tfsdk:"name"`
 	Services  types.List   `tfsdk:"services"`
 	SoftLimit types.Int32  `tfsdk:"soft_limit"`
@@ -188,6 +189,12 @@ func (r *ServiceResource) Schema(ctx context.Context, req resource.SchemaRequest
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+
+			"metro": schema.StringAttribute{
+				Computed:            true,
+				Optional:            true,
+				MarkdownDescription: "Overrides the metro defined in the ukc provider.",
+			},
 		},
 	}
 }
@@ -219,6 +226,11 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
 	}
 
 	var domains []ServiceDomainModel
@@ -256,7 +268,7 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	response, err := r.client.Create(ctx, in)
+	response, err := client.Create(ctx, in)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -316,8 +328,13 @@ func (r *ServiceResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
 	uuid := data.UUID.ValueString()
-	_, err := r.client.Delete(ctx, uuid)
+	_, err := client.Delete(ctx, uuid)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -335,7 +352,12 @@ func (r *ServiceResource) ImportState(ctx context.Context, req resource.ImportSt
 func (r *ServiceResource) read(ctx context.Context, uuid string, data *ServiceResourceModel) diag.Diagnostics {
 	var diag diag.Diagnostics
 
-	response, err := r.client.Get(ctx, uuid)
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
+	response, err := client.Get(ctx, uuid)
 	if err != nil {
 		diag.AddError(
 			"Client Error",

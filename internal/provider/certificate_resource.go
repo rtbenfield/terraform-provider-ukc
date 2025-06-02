@@ -46,6 +46,7 @@ type CertificateResourceModel struct {
 	Status        types.String `tfsdk:"status"`
 	Subject       types.String `tfsdk:"subject"`
 	UUID          types.String `tfsdk:"uuid"`
+	Metro         types.String `tfsdk:"metro"`
 }
 
 // Metadata implements resource.Resource.
@@ -144,6 +145,12 @@ func (r *CertificateResource) Schema(ctx context.Context, req resource.SchemaReq
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+
+			"metro": schema.StringAttribute{
+				Computed:            true,
+				Optional:            true,
+				MarkdownDescription: "Overrides the metro defined in the ukc provider.",
+			},
 		},
 	}
 }
@@ -186,7 +193,12 @@ func (r *CertificateResource) Create(ctx context.Context, req resource.CreateReq
 		PKey:  data.PKey.ValueString(),
 	}
 
-	certRaw, err := r.client.Create(ctx, &certReq)
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
+	certRaw, err := client.Create(ctx, &certReq)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -197,7 +209,7 @@ func (r *CertificateResource) Create(ctx context.Context, req resource.CreateReq
 	cert := certRaw.Data.Entries[0]
 
 	// Not all attributes are returned by CreateCertificate
-	certRawFull, err := r.client.Get(ctx, cert.UUID)
+	certRawFull, err := client.Get(ctx, cert.UUID)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -223,9 +235,14 @@ func (r *CertificateResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
 	// Get certificate by UUID
 	uuid := data.UUID.ValueString()
-	certRaw, err := r.client.Get(ctx, uuid)
+	certRaw, err := client.Get(ctx, uuid)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -259,9 +276,14 @@ func (r *CertificateResource) Delete(ctx context.Context, req resource.DeleteReq
 		return
 	}
 
+	client := r.client
+	if !data.Metro.IsNull() {
+		client = client.WithMetro(data.Metro.ValueString())
+	}
+
 	// Call the Delete API
 	uuid := data.UUID.ValueString()
-	_, err := r.client.Delete(ctx, uuid)
+	_, err := client.Delete(ctx, uuid)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
